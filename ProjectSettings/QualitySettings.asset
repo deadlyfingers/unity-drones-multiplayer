@@ -71,7 +71,7 @@ QualitySettings:
     Web: 1
     WebGL: 0
     WiiU: 1
-    Windows Store Apps: 1
+    Windows Store Apps: 0
     XBOX360: 1
     XboxOne: 1
     iPhone: 0

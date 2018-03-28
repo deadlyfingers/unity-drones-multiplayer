@@ -1,4 +1,5 @@
-﻿using System;
+﻿using HoloToolkit.Unity;
+using System;
 using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
@@ -20,12 +21,15 @@ public class Client : MonoBehaviour {
     #region Constants
     const string DISPLAY_OPT_3D = "3D Display";
     const string DISPLAY_OPT_VR = "SteamVR Display";
+    const string DISPLAY_OPT_MR = "Windows MR";
     #endregion
 
     #region Private Properties
     private const int MAX_CONNECTIONS = 100;
 
+    [SerializeField]
     private string server_ip = "127.0.0.1";
+    [SerializeField]
     private int port = 5701;
 
     private int hostId;
@@ -46,14 +50,16 @@ public class Client : MonoBehaviour {
     private string renderingMethod = DISPLAY_OPT_3D;
 
     private Dictionary<int, Player> players = new Dictionary<int, Player>();
+
+    [SerializeField]
+    private bool autoConnect = false;
     #endregion
 
     #region Public Members
+    public GameObject spawn;
     public GameObject playerPrefab;
-    public GameObject view3D;
-    public GameObject viewVR;
-    public Text statusText;
-    public Text playersCount;
+    public TextMesh debugText;
+    public HeadsUpDirectionIndicator headsUpDirectionIndicator;
     #endregion
 
     public void Start()
@@ -61,9 +67,18 @@ public class Client : MonoBehaviour {
         Application.runInBackground = true;
         SetStatus(string.Empty);
 
-        view3D.SetActive(true);
-        viewVR.SetActive(false);
-    }       
+        if (autoConnect)
+        {
+            AutoConnect();
+        }
+    }
+
+    public void AutoConnect()
+    {
+        playerName = "Player" + players.Count + 1;
+        renderingMethod = DISPLAY_OPT_MR;
+        ConnectToNetwork();
+    }
 
     public void Connect()
     {
@@ -80,7 +95,16 @@ public class Client : MonoBehaviour {
 
         playerName = playerNameInput;
 
+        // Hide connection canvas
+        GameObject.Find("ConnectionCanvas").SetActive(false);
+
+        ConnectToNetwork();
+    }
+
+    private void ConnectToNetwork()
+    {
         SetStatus("Connecting...");
+        Debug.Log("Connecting...");
         NetworkTransport.Init();
         ConnectionConfig connectionConfig = new ConnectionConfig();
 
@@ -96,6 +120,7 @@ public class Client : MonoBehaviour {
         connectionTime = Time.time;
         isConnected = true;
         SetStatus("Connected");
+        Debug.Log("Connected");
     }
 
     private void Update()
@@ -148,8 +173,8 @@ public class Client : MonoBehaviour {
         {
             if (player.connectionId != selfClientId)
             {
-                player.avatar.transform.position = Vector3.Lerp(player.avatar.transform.position, player.position, 0.1f);
-                player.avatar.transform.rotation = Quaternion.Lerp(player.avatar.transform.rotation, player.rotation, 0.1f);
+                player.avatar.transform.localPosition = Vector3.Lerp(player.avatar.transform.localPosition, player.position, 0.1f);
+                player.avatar.transform.localRotation = Quaternion.Lerp(player.avatar.transform.localRotation, player.rotation, 0.1f);
             }
         }
 
@@ -186,7 +211,7 @@ public class Client : MonoBehaviour {
 
     private void SpawnPlayer(int id, string name)
     {
-        GameObject go = Instantiate(playerPrefab) as GameObject;
+        GameObject go = Instantiate(playerPrefab, spawn.transform) as GameObject;
         
         var player = new Player();
         player.connectionId = id;
@@ -197,15 +222,19 @@ public class Client : MonoBehaviour {
         // Is this ours
         if (id == selfClientId)
         {
-            // Hide connection canvas
-            GameObject.Find("ConnectionCanvas").SetActive(false);
+            if(headsUpDirectionIndicator != null)
+                headsUpDirectionIndicator.TargetObject = go;
 
             // Add mobility
             if (renderingMethod == DISPLAY_OPT_VR)
             {
                 AddVRMobility(player);
             }
-            else
+            else if (renderingMethod == DISPLAY_OPT_MR)
+            {
+                AddMRMobility(player);
+            }
+            else 
             {
                 Add3DMobility(player);
             }
@@ -230,8 +259,11 @@ public class Client : MonoBehaviour {
     private void AddVRMobility(Player player)
     {
         player.avatar.AddComponent<DroneVRMovementScript>();
-        view3D.SetActive(false);
-        viewVR.SetActive(true);
+    }
+
+    private void AddMRMobility(Player player)
+    {
+        player.avatar.AddComponent<DroneMovementScript>();
     }
 
     private void Add3DMobility(Player player)
@@ -276,9 +308,9 @@ public class Client : MonoBehaviour {
             {
                 connectionId = selfClientId,
                 playerName = playerName,
-                position = players[selfClientId].avatar.transform.position,
+                position = players[selfClientId].avatar.transform.localPosition,
                 velocity = players[selfClientId].avatar.GetComponent<Rigidbody>().velocity,
-                rotation = players[selfClientId].avatar.transform.rotation,
+                rotation = players[selfClientId].avatar.transform.localRotation,
             };
             Send("UPDPOSITION|" + selfState.ToStateString(), unreliableChannel);
         }
@@ -286,22 +318,21 @@ public class Client : MonoBehaviour {
 
     private float statusUpdateTime = -1;
     private float statusResetRate = 5.0f; // Reset status every 5 seconds
-    private void SetStatus(string message)
+    private void SetStatus(string message, Boolean append=false)
     {
-        if (message == string.Empty)
+        if (string.IsNullOrEmpty(message))
         {
-            statusText.text = message;
+            //debugText.text = append ? debugText.text + "\n" + message : "";
             statusUpdateTime = -1;
+            return;
         }
-        else
-        {
-            statusText.text = "[" + DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss") + "] " + message;
-            statusUpdateTime = Time.time;
-        }
+        debugText.text = append ? debugText.text + "\n" + message : "[" + DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss") + "] " + message;
+        statusUpdateTime = Time.time;
     }
 
     private void SetPlayersCount()
     {
-        playersCount.text = players.Count.ToString();
+        string playersCount = "Players: " + players.Count.ToString();
+        SetStatus(playersCount, true);
     }
 }
